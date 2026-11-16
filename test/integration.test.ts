@@ -1,5 +1,6 @@
 process.env.LOG_LEVEL = 'silent';
 import test from 'node:test';
+import { Buffer } from 'node:buffer';
 import assert from 'node:assert/strict';
 import { PGlite } from '@electric-sql/pglite';
 import { readFile } from 'node:fs/promises';
@@ -57,7 +58,11 @@ test('tracking database integration', async (t) => {
   const db = new Database();
   const query = async (sql: string, params?: unknown[]) => {
     const result = await pg.query(sql, params);
-    return { ...result, rowCount: result.rows.length || result.affectedRows || 0 };
+    return {
+      ...result,
+      rows: result.rows as Record<string, unknown>[],
+      rowCount: result.rows.length || result.affectedRows || 0,
+    };
   };
   Object.defineProperty(db, 'pool', {
     value: { query, connect: async () => ({ query, release() {} }), end: async () => {} },
@@ -93,6 +98,92 @@ test('tracking database integration', async (t) => {
       assert.equal(result.rows.length, 0);
       assert.equal((await api.timeline(booking, principal)).events.length, 3);
     });
+    if (process.env.RUN_BROKER_TESTS === 'true')
+      await t.test('real broker duplicate delivery, bounded retry and isolated DLQ', async () => {
+        const url = process.env.BROKER_TEST_URL;
+        if (!url) throw new Error('BROKER_TEST_URL required; use a development broker');
+        const { config } = await import('../src/config/env.js');
+        const { createApplication } = await import('../src/bootstrap.js');
+        const { Messaging } = await import('../src/infrastructure/messaging/messaging.service.js');
+        const amqp = (await import('amqplib')).default;
+        const prefix = 'tablebooking.test.' + randomUUID();
+        config.RABBITMQ_URL = url;
+        config.MQ_EVENTS_EXCHANGE = prefix + '.events';
+        config.MQ_RETRY_EXCHANGE = prefix + '.retry';
+        config.MQ_DLX = prefix + '.dlx';
+        config.MQ_QUEUE = prefix + '.queue';
+        config.MQ_DLQ = prefix + '.dlq';
+        config.MQ_RETRY_DELAYS_MS = [20, 30, 50];
+        config.MQ_MAX_RETRIES = 3;
+        const app = await createApplication();
+        const applicationDb = app.get(Database);
+        await applicationDb.pool.end();
+        Object.defineProperty(applicationDb, 'pool', { value: db.pool });
+        const messaging = app.get(Messaging);
+        const connection = await amqp.connect(url);
+        const ch = await connection.createConfirmChannel();
+        const wait = async (check: () => Promise<boolean>) => {
+          const deadline = Date.now() + 15000;
+          while (!(await check())) {
+            if (Date.now() > deadline) throw new Error('Broker integration timeout');
+            await new Promise((resolve) => setTimeout(resolve, 50));
+          }
+        };
+        try {
+          config.CONSUMER_ENABLED = 'true';
+          messaging.onModuleInit();
+          await wait(async () => messaging.connected);
+          const ev = { ...event(1, 'REQUESTED'), aggregateId: randomUUID() };
+          for (let i = 0; i < 2; i++)
+            ch.publish(
+              config.MQ_EVENTS_EXCHANGE,
+              config.MQ_ROUTING_KEY,
+              Buffer.from(JSON.stringify(ev)),
+              { persistent: true },
+            );
+          await ch.waitForConfirms();
+          await wait(
+            async () =>
+              Number(
+                (
+                  await query(
+                    'SELECT count(*) AS count FROM tracking.reservation_history WHERE event_id=$1',
+                    [ev.eventId],
+                  )
+                ).rows[0]?.count,
+              ) === 1,
+          );
+          ch.publish(config.MQ_EVENTS_EXCHANGE, config.MQ_ROUTING_KEY, Buffer.from('{bad json'), {
+            persistent: true,
+          });
+          await ch.waitForConfirms();
+          await wait(async () => {
+            const message = await ch.get(config.MQ_DLQ, { noAck: false });
+            if (!message) return false;
+            assert.equal(message.content.toString(), '{bad json');
+            assert.equal(message.properties.headers?.['x-retry-count'], 4);
+            ch.ack(message);
+            return true;
+          });
+        } finally {
+          config.CONSUMER_ENABLED = 'false';
+          await app.close();
+          for (const queue of [
+            config.MQ_QUEUE,
+            config.MQ_DLQ,
+            ...[20, 30, 50].map((delay) => config.MQ_QUEUE + '.retry.' + delay),
+          ])
+            await ch.deleteQueue(queue);
+          for (const exchange of [
+            config.MQ_EVENTS_EXCHANGE,
+            config.MQ_RETRY_EXCHANGE,
+            config.MQ_DLX,
+          ])
+            await ch.deleteExchange(exchange);
+          await ch.close();
+          await connection.close();
+        }
+      });
     await t.test('HTTP authentication, validation and gateway contract', async () => {
       const { createApplication } = await import('../src/bootstrap.js');
       const app = await createApplication();

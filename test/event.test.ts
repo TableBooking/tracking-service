@@ -36,3 +36,28 @@ test('domain conflict hash ignores delivery identity but detects state changes',
     eventHash(parseEvent({ ...ev, data: { ...ev.data, state: 'CANCELLED' } })),
   );
 });
+
+import { EventEmitter } from 'node:events';
+import type { ConfirmChannel, Options } from 'amqplib';
+import { publishConfirmed } from '../src/infrastructure/messaging/publish-confirmed.js';
+test('publisher confirms must reject broker returns rather than lose unroutable retries', async () => {
+  const fake = new EventEmitter() as EventEmitter & {
+    publish: (
+      exchange: string,
+      key: string,
+      body: Buffer,
+      options: Options.Publish,
+      callback: (error: null) => void,
+    ) => boolean;
+  };
+  fake.publish = (_exchange, _key, _body, options, callback) => {
+    fake.emit('return', { properties: { messageId: options.messageId } });
+    callback(null);
+    return true;
+  };
+  await assert.rejects(
+    publishConfirmed(fake as unknown as ConfirmChannel, 'retry', 'key', Buffer.from('{}'), {}),
+    /Unroutable/,
+  );
+  assert.equal(fake.listenerCount('return'), 0);
+});

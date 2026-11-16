@@ -63,7 +63,12 @@ if (config.MQ_MAX_RETRIES > config.MQ_RETRY_DELAYS_MS.length)
 if (config.DELIVERY_LEASE_MS < config.SMTP_TIMEOUT_MS * 3 + 5000)
   throw new Error('Delivery lease must exceed SMTP timeout budget');
 for (const value of [config.DATABASE_URL, process.env.MIGRATION_DATABASE_URL].filter(Boolean)) {
-  const url = new URL(value!);
+  let url: URL;
+  try {
+    url = new URL(value!);
+  } catch {
+    throw new Error('Invalid database connection URL');
+  }
   for (const param of ['sslmode', 'sslrootcert', 'sslkey', 'sslcert'])
     if (url.searchParams.has(param))
       throw new Error('Configure database SSL through DB_SSL settings only');

@@ -24,7 +24,8 @@
     "test:gateway": "node scripts/test-gateway.mjs",
     "diagnostics": "node scripts/diagnostics.mjs",
     "publish:fixture": "node scripts/publish-fixture.mjs",
-    "provision:broker": "node scripts/provision-broker.mjs"
+    "provision:broker": "node scripts/provision-broker.mjs",
+    "test:broker": "node scripts/test-broker.mjs"
   },
   "dependencies": {
     "@nestjs/common": "12.3.3",

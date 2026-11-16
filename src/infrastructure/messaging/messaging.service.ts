@@ -1,3 +1,4 @@
+import { publishConfirmed } from './publish-confirmed.js';
 import { Injectable, type OnModuleInit, type OnModuleDestroy } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
 import amqp from 'amqplib';
@@ -9,6 +10,7 @@ export class Messaging implements OnModuleInit, OnModuleDestroy {
   private connection?: amqp.ChannelModel;
   private channel?: amqp.ConfirmChannel;
   private stopping = false;
+  connected = false;
   private timer: ReturnType<typeof setTimeout> | undefined;
   constructor(
     private readonly consumer: DomainConsumer,
@@ -23,10 +25,12 @@ export class Messaging implements OnModuleInit, OnModuleDestroy {
       this.connection = conn;
       conn.on('error', () => this.log.warn('Broker connection error'));
       conn.on('close', () => {
+        this.connected = false;
         if (!this.stopping) this.schedule();
       });
       const ch = await conn.createConfirmChannel();
       this.channel = ch;
+      ch.setMaxListeners(Math.max(10, config.MQ_PREFETCH + 4));
       ch.on('error', () => this.log.warn('Broker channel error'));
       ch.on('close', () => {
         if (!this.stopping) void conn.close().catch(() => {});
@@ -68,19 +72,13 @@ export class Messaging implements OnModuleInit, OnModuleDestroy {
             const delay =
               attempt >= config.MQ_MAX_RETRIES ? undefined : config.MQ_RETRY_DELAYS_MS[attempt];
             try {
-              await new Promise<void>((resolve, reject) => {
-                ch.publish(
-                  delay === undefined ? config.MQ_DLX : config.MQ_RETRY_EXCHANGE,
-                  delay === undefined ? queue : queue + '.retry.' + delay,
-                  msg.content,
-                  {
-                    persistent: true,
-                    contentType: 'application/json',
-                    headers: { ...msg.properties.headers, 'x-retry-count': attempt + 1 },
-                  },
-                  (err) => (err ? reject(err) : resolve()),
-                );
-              });
+              await publishConfirmed(
+                ch,
+                delay === undefined ? config.MQ_DLX : config.MQ_RETRY_EXCHANGE,
+                delay === undefined ? queue : queue + '.retry.' + delay,
+                msg.content,
+                { ...msg.properties.headers, 'x-retry-count': attempt + 1 },
+              );
               ch.ack(msg);
               this.log.warn({ attempt: attempt + 1, queue }, 'Event scheduled for retry or DLQ');
             } catch {
@@ -90,6 +88,7 @@ export class Messaging implements OnModuleInit, OnModuleDestroy {
         },
         { noAck: false },
       );
+      this.connected = true;
       this.log.info({ queue }, 'Consumer connected');
     } catch {
       this.log.warn('Broker unavailable; reconnect scheduled');

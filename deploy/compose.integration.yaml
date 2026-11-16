@@ -1,0 +1,34 @@
+services:
+  tracking:
+    build: ../../tracking-service
+    env_file: ../../tracking-service/.env
+    volumes:
+      ['../../tracking-service/keys:/app/keys:ro', '../../tracking-service/certs:/app/certs:ro']
+    networks: [platform]
+    init: true
+  notification:
+    build: ../../notification-service
+    env_file: ../../notification-service/.env
+    volumes:
+      [
+        '../../notification-service/keys:/app/keys:ro',
+        '../../notification-service/certs:/app/certs:ro',
+      ]
+    networks: [platform]
+    init: true
+  gateway:
+    build: ../../Api-gateway
+    ports: ['127.0.0.1:8080:8080']
+    environment:
+      JWT_PUBLIC_KEY_PATH: /run/secrets/auth-public.pem
+      JWT_ISSUER: restaurant-auth
+      JWT_AUDIENCE: restaurant-api
+      TRACKING_SERVICE_URL: http://tracking:3004
+      NOTIFICATION_SERVICE_URL: http://notification:3005
+      CORS_ORIGINS: http://localhost:5173
+    volumes: ['../../tracking-service/keys/auth-public.pem:/run/secrets/auth-public.pem:ro']
+    networks: [platform]
+    init: true
+networks:
+  platform:
+    name: tablebooking-platform
