@@ -8,9 +8,9 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { z } from 'zod';
-import { Database } from './database.js';
-import { AccessGuard, type Principal } from './auth.js';
-import { eventHash, type StateEvent } from './event.js';
+import { Database } from '../../infrastructure/database/database.service.js';
+import { AccessGuard, type Principal } from '../../common/auth/access.guard.js';
+import { eventHash, type StateEvent } from '../../infrastructure/messaging/state-event.js';
 @Injectable()
 export class DomainConsumer {
   constructor(private readonly db: Database) {}

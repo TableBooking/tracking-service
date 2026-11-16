@@ -1,15 +1,20 @@
 import { Injectable, type OnModuleDestroy } from '@nestjs/common';
 import pg from 'pg';
-import { config, ssl, namespace } from './config.js';
+import { config, ssl, namespace } from '../../config/env.js';
 @Injectable()
 export class Database implements OnModuleDestroy {
   readonly pool = new pg.Pool({
     connectionString: config.DATABASE_URL,
     ssl: ssl(),
     max: config.DB_POOL_MAX,
-    connectionTimeoutMillis: 10000,
-    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: config.DB_CONNECTION_TIMEOUT_MS,
+    idleTimeoutMillis: config.DB_IDLE_TIMEOUT_MS,
   });
+  constructor() {
+    this.pool.on('error', () => {
+      console.error('Database idle connection failed');
+    });
+  }
   async tx<T>(fn: (client: pg.PoolClient) => Promise<T>): Promise<T> {
     const c = await this.pool.connect();
     try {

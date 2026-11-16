@@ -9,7 +9,7 @@ import {
 import { readFile } from 'node:fs/promises';
 import { createPublicKey } from 'node:crypto';
 import { importSPKI, jwtVerify } from 'jose';
-import { config } from './config.js';
+import { config } from '../../config/env.js';
 export interface Principal {
   sub: string;
   role: 'CUSTOMER' | 'STAFF' | 'MANAGER';

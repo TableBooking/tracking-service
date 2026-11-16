@@ -2,7 +2,7 @@ import 'reflect-metadata';
 import { readFile, readdir } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import pg from 'pg';
-import { ssl } from './ssl.js';
+import { ssl } from './config/ssl.js';
 const namespace = 'tracking';
 const url = process.env.MIGRATION_DATABASE_URL;
 if (!url) throw new Error('MIGRATION_DATABASE_URL required');

@@ -5,12 +5,12 @@ import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { LoggerModule, Logger } from 'nestjs-pino';
 import { randomUUID } from 'node:crypto';
-import { Database } from './database.js';
-import { AccessGuard } from './auth.js';
-import { ErrorFilter } from './http.js';
-import { config } from './config.js';
-import { DomainController, DomainConsumer } from './domain.js';
-import { Messaging } from './messaging.js';
+import { Database } from './infrastructure/database/database.service.js';
+import { AccessGuard } from './common/auth/access.guard.js';
+import { ErrorFilter } from './common/filters/http-exception.filter.js';
+import { config } from './config/env.js';
+import { DomainController, DomainConsumer } from './modules/tracking/tracking.js';
+import { Messaging } from './infrastructure/messaging/messaging.service.js';
 @Controller('health')
 class HealthController {
   constructor(private readonly db: Database) {}
@@ -31,6 +31,7 @@ class HealthController {
     LoggerModule.forRoot({
       pinoHttp: {
         level: config.LOG_LEVEL,
+        base: { service: 'tracking' },
         serializers: {
           req: (req) => ({
             id: req.id,
@@ -55,6 +56,7 @@ export async function createApplication() {
     res.setHeader('x-request-id', req.id);
     next();
   });
+  app.disable('x-powered-by');
   app.useLogger(app.get(Logger));
   app.useGlobalFilters(new ErrorFilter());
   app.enableShutdownHooks();

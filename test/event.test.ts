@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseEvent, eventHash } from '../src/event.js';
+import { parseEvent, eventHash } from '../src/infrastructure/messaging/state-event.js';
 const ev = {
   eventId: '88888888-8888-4888-8888-888888888888',
   eventType: 'booking.state-changed.v1',

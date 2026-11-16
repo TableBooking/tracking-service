@@ -20,7 +20,11 @@
     "test": "tsc -p tsconfig.test.json && node --test .test-dist/test/config.test.js .test-dist/test/event.test.js",
     "migrate": "node dist/migrate.js",
     "bootstrap": "node scripts/bootstrap.mjs",
-    "test:integration": "tsc -p tsconfig.test.json && node --test .test-dist/test/integration.test.js"
+    "test:integration": "tsc -p tsconfig.test.json && node --test .test-dist/test/integration.test.js",
+    "test:gateway": "node scripts/test-gateway.mjs",
+    "diagnostics": "node scripts/diagnostics.mjs",
+    "publish:fixture": "node scripts/publish-fixture.mjs",
+    "provision:broker": "node scripts/provision-broker.mjs"
   },
   "dependencies": {
     "@nestjs/common": "12.3.3",

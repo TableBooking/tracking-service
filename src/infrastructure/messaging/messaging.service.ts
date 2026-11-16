@@ -1,9 +1,9 @@
 import { Injectable, type OnModuleInit, type OnModuleDestroy } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
 import amqp from 'amqplib';
-import { config } from './config.js';
-import { DomainConsumer } from './domain.js';
-import { parseEvent } from './event.js';
+import { config } from '../../config/env.js';
+import { DomainConsumer } from '../../modules/tracking/tracking.js';
+import { parseEvent } from './state-event.js';
 @Injectable()
 export class Messaging implements OnModuleInit, OnModuleDestroy {
   private connection?: amqp.ChannelModel;
@@ -39,7 +39,7 @@ export class Messaging implements OnModuleInit, OnModuleDestroy {
       await ch.bindQueue(queue, config.MQ_EVENTS_EXCHANGE, config.MQ_ROUTING_KEY);
       await ch.assertQueue(config.MQ_DLQ, { durable: true });
       await ch.bindQueue(config.MQ_DLQ, config.MQ_DLX, queue);
-      for (const delay of [5000, 30000, 120000]) {
+      for (const delay of config.MQ_RETRY_DELAYS_MS) {
         const retry = queue + '.retry.' + delay;
         await ch.assertQueue(retry, {
           durable: true,
@@ -60,8 +60,13 @@ export class Messaging implements OnModuleInit, OnModuleDestroy {
             await this.consumer.handle(parseEvent(JSON.parse(msg.content.toString())));
             ch.ack(msg);
           } catch {
-            const attempt = Number(msg.properties.headers?.['x-retry-count'] ?? 0);
-            const delay = [5000, 30000, 120000][attempt];
+            const rawAttempt = Number(msg.properties.headers?.['x-retry-count'] ?? 0);
+            const attempt =
+              Number.isSafeInteger(rawAttempt) && rawAttempt >= 0
+                ? rawAttempt
+                : config.MQ_MAX_RETRIES;
+            const delay =
+              attempt >= config.MQ_MAX_RETRIES ? undefined : config.MQ_RETRY_DELAYS_MS[attempt];
             try {
               await new Promise<void>((resolve, reject) => {
                 ch.publish(
