@@ -1,11 +1,50 @@
 services:
+  bootstrap:
+    profiles: ['setup']
+    image: ${TRACKING_IMAGE:-bao11/tracking-service:0.1.0}
+    build: .
+    command: ['node', 'scripts/bootstrap.mjs']
+    env_file:
+      - path: .env.bootstrap
+        required: false
+    environment:
+      DB_SSL_CA_PATH: /app/certs/supabase-ca.crt
+    volumes: ['./certs:/app/certs:ro']
+    restart: 'no'
+
+  migrate:
+    image: ${TRACKING_IMAGE:-bao11/tracking-service:0.1.0}
+    command: ['node', 'dist/migrate.js']
+    env_file: .env
+    environment:
+      DB_SSL_CA_PATH: /app/certs/supabase-ca.crt
+    volumes: ['./certs:/app/certs:ro']
+    restart: 'no'
+
   tracking:
+    image: ${TRACKING_IMAGE:-bao11/tracking-service:0.1.0}
     build: .
     env_file: .env
-    ports: ['127.0.0.1:3004:3004']
+    environment:
+      HOST: 0.0.0.0
+      PORT: 3004
+      RABBITMQ_URL: ${RABBITMQ_DOCKER_URL:?Set RABBITMQ_DOCKER_URL in .env}
+      MIGRATION_DATABASE_URL: ''
+      DB_SSL_CA_PATH: /app/certs/supabase-ca.crt
+      JWT_PUBLIC_KEY_PATH: /app/keys/auth-public.pem
+    ports: ['127.0.0.1:${PORT:-3004}:3004']
     volumes:
       - ./keys:/app/keys:ro
       - ./certs:/app/certs:ro
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
     init: true
     restart: unless-stopped
     stop_grace_period: 30s
+
+# Start Notification's Compose first: it owns this network and the shared broker.
+networks:
+  default:
+    external: true
+    name: tablebooking-user3

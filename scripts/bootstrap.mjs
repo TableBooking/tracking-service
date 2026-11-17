@@ -32,6 +32,9 @@ try {
       await c.query(sql.rows[0].format);
     }
   }
+  // Managed PostgreSQL administrators need membership to assign schema ownership.
+  const membership = await c.query("SELECT format('GRANT tracking_migrator TO %I', current_user)");
+  await c.query(membership.rows[0].format);
   await c.query('CREATE SCHEMA IF NOT EXISTS tracking AUTHORIZATION tracking_migrator');
   await c.query('GRANT USAGE ON SCHEMA tracking TO tracking_app');
   await c.query(

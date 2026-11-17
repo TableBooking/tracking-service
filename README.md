@@ -1,45 +1,96 @@
-# TableBooking tracking service
+# Tracking service
 
-NestJS 12 / Node 24 / TypeScript ESM, PostgreSQL trên Supabase, RabbitMQ lifecycle consumer.
+Nhận `booking.state-changed.v1`, lưu history và projection để phục vụ status/timeline. Database riêng nằm trên **Supabase**. Tracking không gửi email và không cần SMTP env.
 
-## Bắt đầu
+## Chuẩn bị Supabase và Auth
 
-1. npm ci
-2. Copy .env.example thành .env; điền URL/password, CA và JWT public key (xem docs/external-services.md).
-3. npm run build && npm run migrate
-4. npm run dev hoặc npm start
+Chỉ cần Docker Desktop chạy Linux containers, Docker Compose v2.24+ và Git để lấy source; không cần cài Node nếu chạy bằng Docker.
 
-Cổng mặc định 3004; /health/live và /health/ready là probe nội bộ, không được gateway proxy. Runtime role riêng, migration riêng; không JOIN/FK xuyên service. Node đọc .env khi file tồn tại.
+1. Copy `.env.example` thành `.env` **chỉ khi chưa có file**. Không copy đè file đã điền.
+2. Trong Supabase chọn **Connect → Session pooler**, dùng host được cung cấp, port `5432`, database `postgres`. Điền project ref và password đã URL-encode vào hai URL DB; không thêm `sslmode` vào URL.
+3. Tải CA certificate của project vào `certs/supabase-ca.crt`.
+4. Nhận public key RSA từ Auth và đặt tại `keys/auth-public.pem`. Không dùng private key, Supabase anon key hay service-role API key.
+5. Nếu role/schema đã được bootstrap thì bỏ qua bước tạo DB dưới đây. Nếu là project mới, copy `.env.bootstrap.example` thành `.env.bootstrap`; điền URL quản trị và tự đặt hai mật khẩu app/migrator. Mật khẩu trong hai biến riêng là nguyên bản; mật khẩu trong URL phải URL-encode.
 
-## API
+Bootstrap cấp quyền thành viên migrator cho tài khoản quản trị để gán schema owner trên Supabase. Script không tự đổi mật khẩu role đã tồn tại. Không commit hoặc chia sẻ `.env`/`.env.bootstrap` thật.
 
-GET /api/tracking/bookings/:id/timeline
-GET /api/tracking/bookings/:id/status
+## Chạy từ source vừa clone/pull
 
-Mọi API cần Bearer RS256. CUSTOMER chỉ đọc booking của mình; Notification mọi role chỉ thao tác thông báo của chính sub. Pagination 1/20, max 100. Field nullable tùy chọn bị bỏ khỏi response để bám OpenAPI hiện có. Status Tracking dùng version, entry timeline dùng aggregateVersion.
+Khởi động Compose của **notification-service trước** để có broker và network `tablebooking-user3`. Tracking dùng broker đó, không chạy thêm RabbitMQ hay PostgreSQL riêng.
 
-## Kiểm tra
+Trong thư mục `tracking-service`:
 
-- npm run check ; npm test ; npm run build
-- npm run test:integration: PostgreSQL nhúng PGlite, migration và HTTP thật; không cần Docker/cloud.
-- npm run test:gateway: cần Api-gateway nằm cạnh repo và đã npm ci + npm run build; chạy gateway thật qua HTTP tới backend với DB nhúng và RSA test key.
-- npm run diagnostics -- db hoặc broker: kiểm tra cấu hình cloud đã điền.
+```powershell
+Copy-Item .env.example .env
+New-Item -ItemType Directory -Force keys, certs
+```
 
-Test HTTP và SQL nhúng không thay thế RabbitMQ/SMTP/cloud E2E, multi-process race hoặc network outage. Cần chạy các ca này khi Docker/cloud sẵn sàng. Không dùng test key cho hệ thống thật.
+Chỉ copy khi chưa có .env; điền cấu hình, CA và public key như trên. Hai biến broker dùng cùng username/password/vhost với Notification:
 
-## Docker
+| Biến                | Dùng ở đâu                                   |
+| ------------------- | -------------------------------------------- |
+| RABBITMQ_URL        | Node trên máy, localhost:5675                |
+| RABBITMQ_DOCKER_URL | Container, rabbitmq:5672 trong network chung |
 
-Copy .env.docker.example thành .env, điền cấu hình và mount keys/certs. docker compose up --build. Production: SERVICE_IMAGE=tag/digest rồi docker compose -f compose.prod.yaml up -d; network tablebooking-platform phải tồn tại. Migration one-shot: docker compose run --rm tracking node dist/migrate.js. Không public DB/AMQP.
+Password broker khác password Supabase. Điền đúng password Notification đã dùng khi tạo broker. Queue Tracking là `tracking.lifecycle.q`, không dùng chung queue của Notification.
 
-## Delivery và event
+Nếu là project Supabase mới:
 
-Chỉ consume booking.state-changed.v1 qua tracking.lifecycle.q. ACK sau transaction commit; duplicate eventId ACK không lặp hiệu ứng; retry hữu hạn rồi DLQ. Không publish domain event mới.
-History append-only, version xung đột rollback; projection chỉ tăng; nhận bù sẽ tính lại gap.
+```powershell
+Copy-Item .env.bootstrap.example .env.bootstrap
+# Dien file bootstrap truoc khi chay:
+docker compose --profile setup run --rm --build bootstrap
+```
 
-## Chưa cấu hình
+Build và chạy:
 
-Bạn cần điền Supabase, RabbitMQ, SMTP và key Auth. Chưa deploy cloud hoặc publish image. Xem docs/external-services.md để lấy từng biến.
+```powershell
+docker compose build
+docker compose up -d --no-build --wait
+docker compose ps -a
+```
 
-Bootstrap tiện dụng: copy .env.bootstrap.example thành .env.bootstrap rồi chạy node --env-file=.env.bootstrap scripts/bootstrap.mjs. Chạy npm run provision:broker một lần để tạo cả hai lifecycle queue trước producer. Hai file Compose tích hợp/test ở workspace root có bản được commit trong Tracking deploy/.
+Migration tự chạy trước ứng dụng; `migrate` thoát code 0 là bình thường. Không cần bootstrap lại DB đã tạo. Dừng bản Node đang chiếm cổng 3004 trước khi chạy container.
 
-Broker thật: đặt BROKER_TEST_URL (dev), rồi npm run test:broker. Suite tạo exchange/queue có prefix UUID riêng, kiểm tra duplicate và poison → retry → DLQ, rồi dọn đúng tài nguyên test. Chưa chạy suite này nếu chưa có Docker/broker URL.
+- Readiness: http://localhost:3004/health/ready
+- Liveness: http://localhost:3004/health/live
+- RabbitMQ Manager dùng chung: http://localhost:15675
+- Khi thử cả hai service, Mailpit của Notification: http://localhost:8025
+
+Nếu báo network không tồn tại, khởi động Compose Notification trước. Khi ghép Booking/Operations sau này, thống nhất exchange type, queue arguments và routing keys trước; hiện chưa chứng nhận E2E toàn nhóm.
+
+## Pull image có sẵn
+
+Tên mặc định là `bao11/tracking-service:0.1.0`. **Chưa publish image hay push Git trong lần bàn giao này.** Hiện tại người nhận có source thì build theo hướng dẫn trên. Sau khi chủ repo publish tag, chuẩn bị Compose, .env riêng, CA/public key và chạy:
+
+```powershell
+docker compose pull tracking migrate
+docker compose up -d --no-build --wait
+```
+
+Có thể đặt TRACKING_IMAGE trong .env để chọn tag khác. Image private cần docker login. Không nhúng credentials hoặc public/private key vào image. Pull image không tự cung cấp .env, quyền DB hay dữ liệu mẫu.
+
+## API và kiểm tra
+
+Hai endpoint cần Bearer JWT RS256 đúng Auth (`iss=restaurant-auth`, `aud=restaurant-api`). Customer chỉ đọc booking của mình; quyền staff/manager theo contract.
+
+| Method | Path                                |
+| ------ | ----------------------------------- |
+| GET    | /api/tracking/bookings/:id/status   |
+| GET    | /api/tracking/bookings/:id/timeline |
+
+Consumer ACK sau transaction, chống trùng eventId, không lùi projection khi event đến sai thứ tự; history lưu aggregateVersion và timeline thể hiện gap. Tracking không quyết định trạng thái đặt bàn và không ghi DB của service khác.
+
+Chạy Node để phát triển: `npm ci`, `npm run build`, `npm start`; giữ broker Notification chạy. .env dùng localhost, Compose tự chọn RABBITMQ_DOCKER_URL và đường dẫn key/CA trong container.
+
+```powershell
+npm.cmd run check
+npm.cmd test
+npm.cmd run test:integration
+npm.cmd run test:gateway
+npm.cmd run build
+```
+
+Test gateway cần repo Api-gateway cạnh repo này, đã cài dependencies và build. Test broker: đặt BROKER_TEST_URL tới broker development rồi `npm run test:broker`; tài nguyên test có prefix riêng. Xem [docs/verification.md](docs/verification.md) để biết phạm vi đã kiểm tra.
+
+Dừng bằng `docker compose stop`, xem lỗi bằng `docker compose logs --tail=100 tracking migrate`. Mỗi project Supabase giữ dữ liệu riêng; không có PostgreSQL Docker trong cấu hình này.

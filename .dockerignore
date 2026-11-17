@@ -3,6 +3,12 @@ node_modules
 dist
 .test-dist
 .env
-.env.docker
+.env.*
+**/.env
+**/.env.*
 keys
 certs
+**/keys
+**/certs
+**/*.zip
+**/*.tar

@@ -9,5 +9,4 @@ coverage/
 
 .env.*
 !.env.example
-!.env.docker.example
 !.env.bootstrap.example

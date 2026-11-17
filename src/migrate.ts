@@ -11,7 +11,9 @@ await client.connect();
 try {
   await client.query('BEGIN');
   await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [namespace + '-migrations']);
-  await client.query('CREATE SCHEMA IF NOT EXISTS ' + namespace);
+  // Use the schema provisioned by bootstrap without database CREATE privileges.
+  const schema = await client.query('SELECT 1 FROM pg_namespace WHERE nspname=$1', [namespace]);
+  if (!schema.rowCount) await client.query('CREATE SCHEMA ' + namespace);
   await client.query(
     'CREATE TABLE IF NOT EXISTS ' +
       namespace +
