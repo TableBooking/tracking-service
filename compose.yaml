@@ -1,7 +1,8 @@
 services:
   bootstrap:
     profiles: ['setup']
-    image: ${TRACKING_IMAGE:-bao11/tracking-service:0.1.0}
+    image: tablebooking-tracking-service:local
+    pull_policy: never
     build: .
     command: ['node', 'scripts/bootstrap.mjs']
     env_file:
@@ -13,7 +14,8 @@ services:
     restart: 'no'
 
   migrate:
-    image: ${TRACKING_IMAGE:-bao11/tracking-service:0.1.0}
+    image: tablebooking-tracking-service:local
+    pull_policy: never
     command: ['node', 'dist/migrate.js']
     env_file: .env
     environment:
@@ -22,7 +24,8 @@ services:
     restart: 'no'
 
   tracking:
-    image: ${TRACKING_IMAGE:-bao11/tracking-service:0.1.0}
+    image: tablebooking-tracking-service:local
+    pull_policy: never
     build: .
     env_file: .env
     environment:

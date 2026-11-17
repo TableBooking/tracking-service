@@ -11,8 +11,8 @@ Cấu hình bàn giao: project Supabase Tracking riêng, dùng RabbitMQ Docker/n
 - Trong ca outage độc lập đã kiểm tra: Tracking tiếp tục xử lý khi Notification dừng, Notification nhận lại backlog khi bật.
 - Image chạy uid 1000, không chứa env/key; cấu hình Compose map key/CA vào container.
 
-Chưa chứng nhận login Auth thật, luồng đầy đủ với Booking/Operations/frontend, concurrency nhiều tiến trình, HA, CPU khác hoặc máy người nhận. Không push Git hay Docker Hub; bao11/tracking-service:0.1.0 là tag chuẩn bị và chưa được publish.
+Chưa chứng nhận login Auth thật, luồng đầy đủ với Booking/Operations/frontend, concurrency nhiều tiến trình, HA, CPU khác hoặc máy người nhận. Image ứng dụng được build local từ source, không phụ thuộc tài khoản hoặc kho image cá nhân.
 
 Hướng dẫn cấu hình và chạy ở [README](../README.md).
 
-Cau hinh Compose da gian luoc duoc kiem tra lai: build image bao11 local, bootstrap qua profile setup, migration tu chay va thoat code 0, hai container healthy tren cong 3005/3004, network chung tablebooking-user3. Event gui trung tren cau hinh nay tao mot job SENT, mot history va email cleanup@example.test trong Mailpit. Khong push len registry.
+Cấu hình Compose đã được kiểm tra: build image local, bootstrap qua profile setup, migration tự chạy và thoát code 0, hai container healthy trên cổng 3005/3004, network chung tablebooking-user3. Event gửi trùng tạo một job SENT, một history và email cleanup@example.test trong Mailpit. Không push.

@@ -59,16 +59,11 @@ Migration tự chạy trước ứng dụng; `migrate` thoát code 0 là bình t
 
 Nếu báo network không tồn tại, khởi động Compose Notification trước. Khi ghép Booking/Operations sau này, thống nhất exchange type, queue arguments và routing keys trước; hiện chưa chứng nhận E2E toàn nhóm.
 
-## Pull image có sẵn
+## Chạy trên máy khác
 
-Tên mặc định là `bao11/tracking-service:0.1.0`. **Chưa publish image hay push Git trong lần bàn giao này.** Hiện tại người nhận có source thì build theo hướng dẫn trên. Sau khi chủ repo publish tag, chuẩn bị Compose, .env riêng, CA/public key và chạy:
+Người nhận clone/pull source của repo này, tạo .env riêng, đặt CA/public key và chạy hai lệnh build/up ở trên. Docker tự build image `tablebooking-tracking-service:local` và tạo container trên máy người đó. Không cần tài khoản Docker Hub, docker login hay image đã publish. Khởi động Compose Notification trên cùng máy trước để có broker/network dùng chung.
 
-```powershell
-docker compose pull tracking migrate
-docker compose up -d --no-build --wait
-```
-
-Có thể đặt TRACKING_IMAGE trong .env để chọn tag khác. Image private cần docker login. Không nhúng credentials hoặc public/private key vào image. Pull image không tự cung cấp .env, quyền DB hay dữ liệu mẫu.
+Supabase vẫn là database bên ngoài: cần URL/password hợp lệ, role/schema đã bootstrap và public key khớp Auth. Nếu dùng cùng project Supabase, các máy sẽ đọc/ghi cùng dữ liệu; RabbitMQ và Mailpit local trên từng máy là riêng.
 
 ## API và kiểm tra
 
